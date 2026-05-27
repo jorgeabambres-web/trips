@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { Plus, MapPin, Sparkles, Clock, ChevronDown, ChevronUp, Trash2, ExternalLink } from 'lucide-react'
+import { Plus, MapPin, Sparkles, Clock, ChevronDown, ChevronUp, Trash2, ExternalLink, Utensils } from 'lucide-react'
 import { useTrip } from '../hooks/useTrip'
+import { useSuggestions } from '../hooks/useSuggestions'
 import { supabase } from '../lib/supabase'
 import { sugerirRestaurantes, sugerirAtividades } from '../lib/openai'
 import Button from '../components/ui/Button'
@@ -224,20 +225,31 @@ function ActivityModal({ open, dayId, onClose, onSaved, prefill }) {
 }
 
 function IaModal({ open, type, day, acc, trip, onClose, onAddActivity }) {
+  const { suggestions, loadSuggestions, saveSuggestion, removeSuggestion } = useSuggestions(day?.id, acc?.id)
   const [loading, setLoading] = useState(false)
   const [results, setResults] = useState(null)
   const [error, setError] = useState('')
+  const [selectedForSave, setSelectedForSave] = useState({})
+
+  useEffect(() => {
+    if (open && type === 'restaurantes') {
+      loadSuggestions()
+    }
+  }, [open, type, loadSuggestions])
 
   const fetch = async () => {
-    setLoading(true); setError(''); setResults(null)
+    setLoading(true); setError(''); setResults(null); setSelectedForSave({})
     try {
       if (type === 'restaurantes') {
         const data = await sugerirRestaurantes({
           cidade: day?.cidade || trip?.destino,
           bairro: acc?.bairro,
           endereco: acc?.endereco,
+          latitude: acc?.latitude,
+          longitude: acc?.longitude,
           orcamentoMedio: trip?.orcamento_total ? `${trip.moeda_principal} ${Math.round(trip.orcamento_total / 20)}/refeição` : null,
           atividades: day?.activities,
+          horarioAlmoco: '12h',
           horarioJantar: '20h'
         })
         setResults(data.restaurantes)
@@ -257,20 +269,70 @@ function IaModal({ open, type, day, acc, trip, onClose, onAddActivity }) {
     }
   }
 
-  const title = type === 'restaurantes' ? '🍽️ Sugestões de Restaurantes' : '✨ Sugestões de Atividades'
+  const handleSaveRestaurant = async (item) => {
+    try {
+      await saveSuggestion(
+        selectedForSave[item.nome] || 'jantar',
+        item.nome,
+        item.endereco || '',
+        null,
+        null,
+        item.telefone || '',
+        item.descricao
+      )
+      setSelectedForSave(p => ({ ...p, [item.nome]: null }))
+    } catch (err) {
+      alert('Erro ao salvar: ' + err.message)
+    }
+  }
+
+  const handleDeleteSuggestion = async (suggestionId) => {
+    if (!confirm('Remover esta sugestão?')) return
+    try {
+      await removeSuggestion(suggestionId)
+    } catch (err) {
+      alert('Erro ao remover: ' + err.message)
+    }
+  }
+
+  const showSaved = type === 'restaurantes' && suggestions && suggestions.length > 0
+  const title = type === 'restaurantes' ? '🍽️ Restaurantes' : '✨ Sugestões de Atividades'
 
   return (
     <Modal open={open} onClose={onClose} title={title}>
       <div className="flex flex-col gap-4">
+        {/* Mostrar sugestões salvas */}
+        {showSaved && (
+          <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 mb-2">
+            <p className="text-green-400 text-xs font-medium mb-2">✓ Sugestões salvas para este dia</p>
+            {suggestions.map(sugg => (
+              <div key={sugg.id} className="flex items-start justify-between gap-2 py-1.5">
+                <div>
+                  <p className="text-white text-sm font-medium">{sugg.nome_restaurante}</p>
+                  <p className="text-gray-500 text-xs">{sugg.tipo === 'almoco' ? 'Almoço' : 'Jantar'}</p>
+                </div>
+                <button
+                  onClick={() => handleDeleteSuggestion(sugg.id)}
+                  className="p-1 rounded hover:bg-red-500/20 text-gray-500 hover:text-red-400 transition-colors shrink-0"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {!results && !loading && (
           <div className="text-center py-4">
             <p className="text-gray-400 text-sm mb-4">
               {type === 'restaurantes'
-                ? 'A IA vai sugerir restaurantes baseados na sua hospedagem e roteiro do dia.'
+                ? showSaved
+                  ? 'Você já tem sugestões salvas. Clique abaixo para gerar novas.'
+                  : 'A IA vai sugerir restaurantes baseados na sua hospedagem e roteiro do dia.'
                 : 'A IA vai sugerir atividades para completar seu dia.'}
             </p>
             <Button onClick={fetch} className="gap-2">
-              <Sparkles size={16} /> Gerar sugestões
+              <Sparkles size={16} /> {showSaved ? 'Gerar novamente' : 'Gerar sugestões'}
             </Button>
           </div>
         )}
@@ -297,19 +359,34 @@ function IaModal({ open, type, day, acc, trip, onClose, onAddActivity }) {
                   {item.duracao && <Tag>⏱ {item.duracao}</Tag>}
                 </div>
                 {item.motivo && <p className="text-gray-500 text-xs mt-2 italic">{item.motivo}</p>}
+
                 {type === 'atividades' && (
                   <Button variant="ghost" className="text-xs mt-2 text-accent" onClick={() => onAddActivity({ nome: item.nome, observacoes: item.descricao, custo_previsto: '' })}>
                     <Plus size={13} /> Adicionar ao roteiro
                   </Button>
                 )}
+
                 {type === 'restaurantes' && (
-                  <a
-                    href={`https://www.google.com/maps/search/${encodeURIComponent(item.nome + ' ' + (day?.cidade || ''))}`}
-                    target="_blank" rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-white transition-colors mt-2"
-                  >
-                    <ExternalLink size={13} /> Ver no Maps
-                  </a>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    <select
+                      value={selectedForSave[item.nome] || 'jantar'}
+                      onChange={(e) => setSelectedForSave(p => ({ ...p, [item.nome]: e.target.value }))}
+                      className="text-xs bg-white/10 text-white rounded px-2 py-1 border border-white/20"
+                    >
+                      <option value="almoco">Almoço</option>
+                      <option value="jantar">Jantar</option>
+                    </select>
+                    <Button variant="ghost" className="text-xs text-green-400 hover:text-green-300" onClick={() => handleSaveRestaurant(item)}>
+                      <Utensils size={13} /> Salvar sugestão
+                    </Button>
+                    <a
+                      href={`https://www.google.com/maps/search/${encodeURIComponent(item.nome + ' ' + (day?.cidade || ''))}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-white transition-colors"
+                    >
+                      <ExternalLink size={13} /> Ver no Maps
+                    </a>
+                  </div>
                 )}
               </div>
             ))}

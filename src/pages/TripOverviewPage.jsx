@@ -160,11 +160,41 @@ function EmptyItem({ label }) {
 }
 
 function AccommodationModal({ open, onClose, tripId, onSaved }) {
-  const empty = { nome: '', bairro: '', endereco: '', checkin: '', checkout: '', valor: '', moeda: 'BRL', status: 'confirmada', observacoes: '' }
+  const empty = { nome: '', bairro: '', endereco: '', checkin: '', checkout: '', valor: '', moeda: 'BRL', status: 'confirmada', observacoes: '', latitude: null, longitude: null }
   const [form, setForm] = useState(empty)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [geoLoading, setGeoLoading] = useState(false)
   const set = (f) => (e) => setForm(p => ({ ...p, [f]: e.target.value }))
+
+  // Geocodificar endereço automaticamente
+  const handleGeocodeAddress = async () => {
+    if (!form.endereco) {
+      setError('Preencha o endereço primeiro')
+      return
+    }
+    setGeoLoading(true)
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(form.endereco)}`
+      )
+      const data = await response.json()
+      if (data.length > 0) {
+        setForm(p => ({
+          ...p,
+          latitude: parseFloat(data[0].lat),
+          longitude: parseFloat(data[0].lon)
+        }))
+        setError('')
+      } else {
+        setError('Endereço não encontrado')
+      }
+    } catch (err) {
+      setError('Erro ao geocodificar: ' + err.message)
+    } finally {
+      setGeoLoading(false)
+    }
+  }
 
   const handleSave = async (e) => {
     e.preventDefault()
@@ -173,7 +203,9 @@ function AccommodationModal({ open, onClose, tripId, onSaved }) {
     try {
       const { error } = await supabase.from('accommodations').insert({
         ...form, trip_id: tripId,
-        valor: form.valor ? Number(form.valor) : null
+        valor: form.valor ? Number(form.valor) : null,
+        latitude: form.latitude || null,
+        longitude: form.longitude || null
       })
       if (error) throw error
       onSaved(); onClose(); setForm(empty); setError('')
@@ -186,7 +218,20 @@ function AccommodationModal({ open, onClose, tripId, onSaved }) {
       <form onSubmit={handleSave} className="flex flex-col gap-4">
         <Input label="Nome *" placeholder="ex: Hotel Lisboa Centro" value={form.nome} onChange={set('nome')} />
         <Input label="Bairro" placeholder="ex: Chiado" value={form.bairro} onChange={set('bairro')} />
-        <Input label="Endereço" placeholder="Rua..." value={form.endereco} onChange={set('endereco')} />
+        <div className="flex gap-2">
+          <Input label="Endereço" placeholder="Rua..." value={form.endereco} onChange={set('endereco')} className="flex-1" />
+          <button
+            type="button"
+            onClick={handleGeocodeAddress}
+            disabled={geoLoading || !form.endereco}
+            className="mt-6 px-3 py-2 bg-accent/20 text-accent rounded-lg text-sm font-medium hover:bg-accent/30 disabled:opacity-50 transition-colors"
+          >
+            {geoLoading ? '...' : 'Loc'}
+          </button>
+        </div>
+        {form.latitude && (
+          <p className="text-xs text-gray-500">📍 {form.latitude.toFixed(4)}, {form.longitude.toFixed(4)}</p>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <Input label="Check-in *" type="date" value={form.checkin} onChange={set('checkin')} />
           <Input label="Check-out *" type="date" value={form.checkout} onChange={set('checkout')} />
