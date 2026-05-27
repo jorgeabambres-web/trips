@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Plane, LogOut, MapPin, Calendar } from 'lucide-react'
+import { Plus, Plane, LogOut, MapPin, Calendar, Download } from 'lucide-react'
 import { useTrips } from '../hooks/useTrips'
 import { useAuth } from '../hooks/useAuth'
 import Button from '../components/ui/Button'
 import Modal from '../components/ui/Modal'
 import Input, { Select, Textarea } from '../components/ui/Input'
 import Spinner from '../components/ui/Spinner'
+import ImportModal from '../components/ImportModal'
 import { formatDate, tripStatus, tripDuration } from '../utils/dates'
 import { MOEDAS } from '../utils/currency'
 
@@ -19,10 +20,11 @@ const STATUS_LABELS = {
 const EMPTY_FORM = { nome: '', destino: '', data_inicio: '', data_fim: '', orcamento_total: '', moeda_principal: 'BRL', observacoes: '' }
 
 export default function TripsPage() {
-  const { trips, loading, createTrip } = useTrips()
+  const { trips, loading, createTrip, refetch } = useTrips()
   const { signOut } = useAuth()
   const navigate = useNavigate()
   const [modal, setModal] = useState(false)
+  const [importModal, setImportModal] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -63,6 +65,9 @@ export default function TripsPage() {
         <div className="flex gap-2">
           <Button variant="ghost" onClick={signOut} className="p-2">
             <LogOut size={18} />
+          </Button>
+          <Button variant="secondary" onClick={() => setImportModal(true)} className="gap-1.5 text-sm py-2">
+            <Download size={16} /> Importar
           </Button>
           <Button onClick={() => setModal(true)} className="gap-1.5">
             <Plus size={18} /> Nova
@@ -116,6 +121,15 @@ export default function TripsPage() {
           <Button type="submit" loading={saving} className="w-full mt-2">Criar viagem</Button>
         </form>
       </Modal>
+
+      <ImportModal
+        open={importModal}
+        onClose={() => setImportModal(false)}
+        onImportSuccess={(tripId) => {
+          refetch()
+          navigate(`/trip/${tripId}`)
+        }}
+      />
     </div>
   )
 }
