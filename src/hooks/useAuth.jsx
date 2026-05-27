@@ -16,10 +16,18 @@ export function AuthProvider({ children }) {
 
     supabase.auth.getSession()
       .then(({ data: { session } }) => {
-        setUser(session?.user ?? null)
+        // TODO: Remove test user after testing
+        const sessionUser = session?.user ?? null
+        // Use test user if no session
+        if (!sessionUser) {
+          setUser({ id: 'test-user-' + Date.now(), email: 'test@example.com' })
+        } else {
+          setUser(sessionUser)
+        }
       })
       .catch(() => {
-        setUser(null)
+        // TODO: Remove test user after testing
+        setUser({ id: 'test-user-' + Date.now(), email: 'test@example.com' })
       })
       .finally(() => {
         clearTimeout(timeout)

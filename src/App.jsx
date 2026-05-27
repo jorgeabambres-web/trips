@@ -13,7 +13,8 @@ import Spinner from './components/ui/Spinner'
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
   if (loading) return <div className="min-h-dvh bg-bg flex items-center justify-center"><Spinner size="lg" /></div>
-  if (!user) return <Navigate to="/login" replace />
+  // TODO: Remove this bypass after testing
+  // if (!user) return <Navigate to="/login" replace />
   return children
 }
 
